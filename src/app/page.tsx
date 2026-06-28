@@ -1,38 +1,17 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import axios, { AxiosStatic } from 'axios';
+
+import type { Guess, ApiSpeciesData, FormattedSpecies, Taxon } from '@/types';
 
 import { FaGithub } from 'react-icons/fa';
-
-interface Taxon {
-  kingdom: string;
-  phylum: string;
-  class: string;
-  order: string;
-  family: string;
-  genus: string;
-}
-
-interface Guess {
-  name: string;
-  scientificName: string;
-  taxon: Taxon;
-  image?: string;
-}
-
-interface DailySpecies {
-  scientificName: string;
-  vernacularName?: string;
-  taxon: Taxon;
-  image?: string;
-  conservationStatus?: string;
-}
+import { getRandomSpecies } from '@/services/species';
 
 const MAX_ATTEMPTS = 6;
 
 export default function Biordle() {
-  const [dailySpecies, setDailySpecies] = useState<DailySpecies | null>(null);
+  const [FormattedSpecies, setFormattedSpecies] = useState<FormattedSpecies | null>(null);
   const [guesses, setGuesses] = useState<Guess[]>([]);
   const [currentGuess, setCurrentGuess] = useState('');
   const [gameStatus, setGameStatus] = useState<'playing' | 'won' | 'lost'>('playing');
@@ -42,22 +21,24 @@ export default function Biordle() {
 
   // Mock daily species for demo (in real app, fetch from backend or localStorage with date)
   useEffect(() => {
-    // Simulate API fetch for daily species
-    const mockDaily: DailySpecies = {
-      scientificName: "Panthera leo",
-      vernacularName: "Leão",
+    const randomSpecies: ApiSpeciesData = getRandomSpecies();
+
+    const formattedSpecies: FormattedSpecies = {
+      scientificName: randomSpecies.species,
+      vernacularName: randomSpecies.vernacularName,
       taxon: {
-        kingdom: "Animalia",
-        phylum: "Chordata",
-        class: "Mammalia",
-        order: "Carnivora",
-        family: "Felidae",
-        genus: "Panthera"
+        kingdom: randomSpecies.kingdom,
+        phylum: randomSpecies.phylum,
+        class: randomSpecies?.class,
+        order: randomSpecies.order,
+        family: randomSpecies.family,
+        genus: randomSpecies.genus
       },
-      image: "https://upload.wikimedia.org/wikipedia/commons/thumb/7/73/Lion_waiting_in_Namibia.jpg/800px-Lion_waiting_in_Namibia.jpg",
-      conservationStatus: "Vulnerable"
-    };
-    setDailySpecies(mockDaily);
+      iucnConservationStatusCode: randomSpecies.iucn_data?.code,
+      image: randomSpecies.media_data?.results[0].identifier
+    }
+
+    setFormattedSpecies(formattedSpecies);
     setLoading(false);
 
     // Load saved game from localStorage
@@ -75,7 +56,7 @@ export default function Biordle() {
   }, [guesses]);
 
   const checkGuess = async (guessName: string) => {
-    if (!dailySpecies) return;
+    if (!FormattedSpecies) return;
 
     setLoading(true);
 
@@ -102,13 +83,13 @@ export default function Biordle() {
       setGuesses(updatedGuesses);
 
       // Check if won
-      if (newGuess.scientificName.toLowerCase() === dailySpecies.scientificName.toLowerCase() ||
-        newGuess.name.toLowerCase() === dailySpecies.vernacularName?.toLowerCase()) {
+      if (newGuess.scientificName.toLowerCase() === FormattedSpecies.scientificName.toLowerCase() ||
+        newGuess.name.toLowerCase() === FormattedSpecies.vernacularName?.toLowerCase()) {
         setGameStatus('won');
-        setMessage('Parabéns! Você descobriu a espécie do dia!');
+        setMessage('Parabéns! Você descobriu a espécie!');
       } else if (updatedGuesses.length >= MAX_ATTEMPTS) {
         setGameStatus('lost');
-        setMessage(`A espécie era ${dailySpecies.vernacularName} (${dailySpecies.scientificName})`);
+        setMessage(`A espécie era ${FormattedSpecies.vernacularName} (${FormattedSpecies.scientificName})`);
       }
 
     } catch (error) {
@@ -127,9 +108,9 @@ export default function Biordle() {
   };
 
   const getTileClass = (level: keyof Taxon, guessTaxon: Taxon) => {
-    if (!dailySpecies) return 'tile';
+    if (!FormattedSpecies) return 'tile';
 
-    const correct = dailySpecies.taxon[level];
+    const correct = FormattedSpecies.taxon[level];
     const guessed = guessTaxon[level];
 
     if (guessed === correct) return 'tile correct';
@@ -169,17 +150,17 @@ export default function Biordle() {
 
       <main className="flex-1 flex flex-col items-center py-8 px-4 max-w-2xl mx-auto w-full">
         {/* Daily Image Hint */}
-        {dailySpecies && (
+        {FormattedSpecies && (
           <div className="mb-8 text-center">
             <div className="text-sm text-zinc-400 mb-2">Dica Visual</div>
             <img
-              src={dailySpecies.image}
+              src={FormattedSpecies.image}
               alt="Espécie do dia"
               className="w-64 h-64 object-cover rounded-xl mx-auto border border-zinc-700"
             />
-            {dailySpecies.conservationStatus && (
+            {FormattedSpecies.iucnConservationStatusCode && (
               <div className="mt-3 text-amber-400 text-sm">
-                Status: {dailySpecies.conservationStatus}
+                Status na Lista Vermelha da IUCN: {FormattedSpecies.iucnConservationStatusCode}
               </div>
             )}
           </div>
@@ -204,7 +185,7 @@ export default function Biordle() {
                     key={i}
                     className={getTileClass(level, guess.taxon)}
                   >
-                    {guess.taxon[level].substring(0, 8)}
+                    {guess.taxon[level] ? guess.taxon[level].substring(0, 8) : ''}
                   </div>
                 ))}
               </div>
@@ -229,7 +210,7 @@ export default function Biordle() {
                 type="text"
                 value={currentGuess}
                 onChange={(e) => setCurrentGuess(e.target.value)}
-                placeholder="Nome científico ou popular (ex: leão)"
+                placeholder="nome científico ou popular..."
                 className="flex-1 bg-zinc-900 border border-zinc-700 rounded-xl px-6 py-4 text-lg focus:outline-none focus:border-emerald-500"
                 disabled={loading}
               />
@@ -252,26 +233,19 @@ export default function Biordle() {
           <div className="mt-8 p-6 bg-zinc-900 border border-zinc-700 rounded-2xl text-center">
             <div className="text-xl font-semibold mb-4">{message}</div>
 
-            {gameStatus !== 'playing' && dailySpecies && (
+            {gameStatus !== 'playing' && FormattedSpecies && (
               <div className="space-y-4">
                 <div>
                   <img
-                    src={dailySpecies.image}
-                    alt={dailySpecies.scientificName}
+                    src={FormattedSpecies.image}
+                    alt={FormattedSpecies.scientificName}
                     className="w-48 h-48 object-cover rounded-lg mx-auto"
                   />
                 </div>
 
                 <div className="text-emerald-400 text-lg">
-                  {dailySpecies.vernacularName} — <span className="italic">{dailySpecies.scientificName}</span>
+                  {FormattedSpecies.vernacularName} — <span className="italic">{FormattedSpecies.scientificName}</span>
                 </div>
-
-                <button
-                  onClick={resetGame}
-                  className="mt-4 px-8 py-3 bg-emerald-600 hover:bg-emerald-500 rounded-xl"
-                >
-                  Jogar Novamente Amanhã
-                </button>
               </div>
             )}
           </div>
@@ -296,7 +270,7 @@ export default function Biordle() {
 
             <div className="space-y-6 text-sm">
               <div>
-                Adivinhe a <strong>espécie do dia</strong> em até 6 tentativas.
+                Adivinhe a <strong>espécie</strong> em até 6 tentativas.
               </div>
 
               <div>
